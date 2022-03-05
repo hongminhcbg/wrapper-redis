@@ -2,6 +2,7 @@ package cache
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/go-redis/redis/v8"
@@ -48,3 +49,36 @@ func (c *CacheImpl) LRANGE(ctx context.Context, key string, start int64, end int
 	return result
 }
 
+func (c *CacheImpl) ZADD(ctx context.Context, key string, scoresAndMembers ...interface{}) (int64, error) {
+	if len(scoresAndMembers) % 2 != 0 {
+		return 0, fmt.Errorf("scores and members is %d, odd", len(scoresAndMembers))
+	}
+
+	args := make([]*redis.Z, 0, len(scoresAndMembers)/2)
+	for i := 0; i < len(scoresAndMembers); i += 2 {
+		score, ok := scoresAndMembers[i].(float64)
+		if !ok {
+			return 0, fmt.Errorf("score is not float64, %v", scoresAndMembers[i])
+		}
+
+		args = append(args, &redis.Z{
+			Score:  score,
+			Member: scoresAndMembers[i+1],
+		})
+	}
+
+	return c.cli.ZAdd(ctx, key, args...).Result()
+}
+
+func (c *CacheImpl) ZSCAN(ctx context.Context, key string) []string {
+	result := make([]string, 0)
+	iter := c.cli.ZScan(ctx, key, 0, "", -1).Iterator()
+	for  {
+		result = append(result, iter.Val())
+		if !iter.Next(ctx) {
+			break
+		}
+	}
+
+	return result
+}
